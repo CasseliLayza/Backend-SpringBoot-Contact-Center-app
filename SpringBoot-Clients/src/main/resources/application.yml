@@ -1,0 +1,5 @@
+asterisk:
+  host: 127.0.0.1
+  port: 5038
+  username: java
+  password: pass1234
