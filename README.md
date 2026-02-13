@@ -357,7 +357,7 @@ Para dudas, sugerencias o contribuciones:
 🔗 [LinkedIn](https://www.linkedin.com/in/casseli-layza/)
 🔗 [GitHub](https://github.com/CasseliLayza)
 
-💡 **Desarrollado por Casseli Layza como parte de un proyecto con Plataformas Contact Centers & Spring Boot.**
+💡 **Desarrollado por Casseli Layza como parte de un proyecto I+D con Plataformas Contact Centers & Spring Boot.**
 
 ***💚 ¡Gracias por revisar este proyecto!... Powered by Casse 🌟📚🚀...!!***
 
