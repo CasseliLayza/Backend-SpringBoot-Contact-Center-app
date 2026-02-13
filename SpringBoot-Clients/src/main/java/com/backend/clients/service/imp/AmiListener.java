@@ -11,7 +11,8 @@ import org.asteriskjava.manager.TimeoutException;
 import org.asteriskjava.manager.action.RedirectAction;
 import org.asteriskjava.manager.action.SetVarAction;
 import org.asteriskjava.manager.event.DtmfEvent;
-import org.asteriskjava.manager.event.NewChannelEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -28,6 +29,7 @@ public class AmiListener {
     private final CallRepository callRepository;
     private final ExecutorService executor =
             Executors.newFixedThreadPool(10);
+    private static final Logger logger = LoggerFactory.getLogger(AmiListener.class);
 
 
     public AmiListener(ManagerConnection managerConnection, ClientRepository clientRepository, CallRepository callRepository) {
@@ -66,7 +68,8 @@ public class AmiListener {
 
         managerConnection.addEventListener(event -> {
             //System.out.println(" event: " + event.getClass().getSimpleName());
-            System.out.println(event);
+
+            logger.info("Received event: " + event);
 
 
 //            if (event instanceof NewChannelEvent e) {
@@ -83,7 +86,7 @@ public class AmiListener {
                 String digit = e.getDigit();
                 String channel = e.getChannel();
 
-                System.out.println("Received DTMF digit: " + digit + " on channel: " + channel + " from phone: " + phone);
+                logger.info("Received DTMF digit: " + digit + " on channel: " + channel + " from phone: " + phone);
 
                 executor.submit(() -> {
 
@@ -98,7 +101,7 @@ public class AmiListener {
 
         });
 
-        System.out.println("AMI Listener started and connected to Asterisk server.");
+        logger.info("AMI Listener started and connected to Asterisk server.");
 
 
     }
@@ -107,7 +110,7 @@ public class AmiListener {
     private void flujoLLamada(String phone, String channel) throws IOException, TimeoutException {
         Optional<Client> client = clientRepository.findByPhone(phone);
 
-        System.out.println("Client >>>>>>>>>>>>>>>>>>>>>>>>>>>>> " + client);
+        logger.info("Client >>>>>>>>>>>>>>>>>>>>>>>>>>>>> " + client);
 
         if (client.isEmpty()) {
             registerCall(phone, "No client");
@@ -144,10 +147,10 @@ public class AmiListener {
 
         Client client = clientRepository.findByPhone(phone)
                 .map(c -> {
-                    System.out.println("Client found: " + c);
+                    logger.info("Client found: " + c);
                     return c;
                 }).orElseThrow(() -> {
-                    System.out.println("No client found with phone: " + phone);
+                    logger.warn("No client found with phone: " + phone);
                     throw new RuntimeException("No client found with phone: " + phone);
                 });
 
