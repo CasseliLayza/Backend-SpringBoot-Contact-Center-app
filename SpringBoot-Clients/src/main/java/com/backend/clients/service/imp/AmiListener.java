@@ -17,6 +17,8 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Component
 public class AmiListener {
@@ -24,6 +26,8 @@ public class AmiListener {
     private final ManagerConnection managerConnection;
     private final ClientRepository clientRepository;
     private final CallRepository callRepository;
+    private final ExecutorService executor =
+            Executors.newFixedThreadPool(10);
 
 
     public AmiListener(ManagerConnection managerConnection, ClientRepository clientRepository, CallRepository callRepository) {
@@ -64,23 +68,31 @@ public class AmiListener {
             //System.out.println(" event: " + event.getClass().getSimpleName());
             System.out.println(event);
 
-            String phone = null;
 
-            if (event instanceof NewChannelEvent e) {
-                System.out.println("Incoming call detected: " + phone);
-            }
+//            if (event instanceof NewChannelEvent e) {
+//                System.out.println("Incoming call detected: " + phone);
+//            }
 
             if (event instanceof DtmfEvent e) {
-                phone = e.getCallerIdNum();
+
+                if (!e.isEnd()) {
+                    return;
+                }
+
+                String phone = e.getCallerIdNum();
                 String digit = e.getDigit();
                 String channel = e.getChannel();
+
                 System.out.println("Received DTMF digit: " + digit + " on channel: " + channel + " from phone: " + phone);
 
-                try {
-                    procesarDTMF(digit, channel, phone);
-                } catch (IOException | TimeoutException ex) {
-                    throw new RuntimeException(ex);
-                }
+                executor.submit(() -> {
+
+                    try {
+                        procesarDTMF(digit, channel, phone);
+                    } catch (IOException | InterruptedException | TimeoutException ex) {
+                        throw new RuntimeException(ex);
+                    }
+                });
 
             }
 
@@ -117,7 +129,7 @@ public class AmiListener {
     }
 
 
-    private void procesarDTMF(String opcion, String channel, String phone) throws IOException, TimeoutException {
+    private void procesarDTMF(String opcion, String channel, String phone) throws IOException, TimeoutException, InterruptedException {
 
         switch (opcion) {
             case "1" -> consultaSaldo(channel, phone);
@@ -128,7 +140,7 @@ public class AmiListener {
     }
 
 
-    private void consultaSaldo(String channel, String phone) throws IOException, TimeoutException {
+    private void consultaSaldo(String channel, String phone) throws IOException, InterruptedException {
 
         Client client = clientRepository.findByPhone(phone)
                 .map(c -> {
@@ -140,6 +152,7 @@ public class AmiListener {
                 });
 
         String saldo = client.getBalance();
+        registerCall(client.getPhone(), "Active client");
         sendIVR(channel, "ivr-tiene-saldo", saldo);
 
     }
@@ -156,18 +169,19 @@ public class AmiListener {
         action.setExten("s");
         action.setPriority(1);
 
-        managerConnection.sendAction(action);
+        managerConnection.sendAction(action, null);
 
     }
 
-    private void sendIVR(String channel, String ivrContext, String balance) throws IOException, TimeoutException {
+    private void sendIVR(String channel, String ivrContext, String balance)
+            throws IOException, InterruptedException {
 
         SetVarAction setVarAction = new SetVarAction();
         setVarAction.setChannel(channel);
         setVarAction.setVariable("BALANCE");
         setVarAction.setValue(balance);
 
-        managerConnection.sendAction(setVarAction);
+        managerConnection.sendAction(setVarAction, null);
 
         RedirectAction action = new RedirectAction();
         action.setChannel(channel);
@@ -175,7 +189,8 @@ public class AmiListener {
         action.setExten("s");
         action.setPriority(1);
 
-        managerConnection.sendAction(action);
+        Thread.sleep(100);
+        managerConnection.sendAction(action, null);
 
     }
 
