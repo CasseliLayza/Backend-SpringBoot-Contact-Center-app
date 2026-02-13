@@ -1,4 +1,4 @@
-![logo](resources/static/assets/img/CC-Spring.jpg)
+![logo](/resources/static/assets/img/CC-Spring.jpg)
 # 🚀 IVR Banking System Enterprise – Asterisk + Spring Boot + AMI
 
 ### Plataforma Inteligente de Validación, Procesamiento y Registro de Clientes en Tiempo Real
