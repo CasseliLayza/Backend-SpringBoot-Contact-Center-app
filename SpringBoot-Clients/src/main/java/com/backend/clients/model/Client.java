@@ -1,4 +1,4 @@
-package com.backend.clients.entity;
+package com.backend.clients.model;
 
 
 import jakarta.persistence.*;

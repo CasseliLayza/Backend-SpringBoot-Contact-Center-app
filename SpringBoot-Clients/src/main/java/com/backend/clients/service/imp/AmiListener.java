@@ -1,7 +1,8 @@
 package com.backend.clients.service.imp;
 
-import com.backend.clients.entity.Call;
-import com.backend.clients.entity.Client;
+import com.backend.clients.model.Call;
+import com.backend.clients.model.CallSession;
+import com.backend.clients.model.Client;
 import com.backend.clients.repository.CallRepository;
 import com.backend.clients.repository.ClientRepository;
 import jakarta.annotation.PostConstruct;
@@ -10,26 +11,31 @@ import org.asteriskjava.manager.ManagerConnection;
 import org.asteriskjava.manager.TimeoutException;
 import org.asteriskjava.manager.action.RedirectAction;
 import org.asteriskjava.manager.action.SetVarAction;
-import org.asteriskjava.manager.event.DtmfEvent;
+import org.asteriskjava.manager.event.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 @Component
 public class AmiListener {
 
+    private static final Logger logger = LoggerFactory.getLogger(AmiListener.class);
     private final ManagerConnection managerConnection;
     private final ClientRepository clientRepository;
     private final CallRepository callRepository;
     private final ExecutorService executor =
             Executors.newFixedThreadPool(10);
-    private static final Logger logger = LoggerFactory.getLogger(AmiListener.class);
+
+    private final Map<String, CallSession> sessions = new ConcurrentHashMap<>();
 
 
     public AmiListener(ManagerConnection managerConnection, ClientRepository clientRepository, CallRepository callRepository) {
@@ -46,12 +52,12 @@ public class AmiListener {
             System.out.println(event);
         });
 
-        System.out.println("AMI Listener started and connected to Asterisk server.");
+        logger.info("AMI Listener started and connected to Asterisk server.");
 */
         /*managerConnection.addEventListener(event -> {
             if (event instanceof NewStateEvent e) {
                 if ("Ringing".equals((e.getState()))) {
-                    System.out.println("Incoming call detected: "
+                    logger.info("Incoming call detected: "
                             + e.getCallerIdNum());
                 }
             }
@@ -67,14 +73,23 @@ public class AmiListener {
         managerConnection.sendAction(originate);*/
 
         managerConnection.addEventListener(event -> {
-            //System.out.println(" event: " + event.getClass().getSimpleName());
+            //logger.info(" event: " + event.getClass().getSimpleName());
 
             logger.info("Received event: " + event);
 
 
-//            if (event instanceof NewChannelEvent e) {
-//                System.out.println("Incoming call detected: " + phone);
-//            }
+            if (event instanceof NewChannelEvent e) {
+                logger.info("New channel event detected: " + e.getChannel() + " Caller ID: " + e.getCallerIdNum());
+                String uniqueId = e.getUniqueId();
+                String callerId = e.getCallerIdNum();
+
+                CallSession session = new CallSession(uniqueId, LocalDateTime.now());
+                session.setCallerId(callerId);
+                sessions.put(uniqueId, session);
+
+                logger.info("Session created for uniqueId " + uniqueId + ": " + session);
+
+            }
 
             if (event instanceof DtmfEvent e) {
 
@@ -85,18 +100,54 @@ public class AmiListener {
                 String phone = e.getCallerIdNum();
                 String digit = e.getDigit();
                 String channel = e.getChannel();
+                String uniqueId = e.getUniqueId();
+
+                CallSession session = sessions.get(uniqueId);
+
+                if (session != null) {
+                    session.setSelectedOption(digit);
+                    sessions.put(uniqueId, session);
+                    logger.info("Session found for uniqueId " + uniqueId + ": " + session);
+                }
 
                 logger.info("Received DTMF digit: " + digit + " on channel: " + channel + " from phone: " + phone);
 
                 executor.submit(() -> {
 
                     try {
-                        procesarDTMF(digit, channel, phone);
+                        procesarDTMF(digit, channel, phone, uniqueId);
                     } catch (IOException | InterruptedException | TimeoutException ex) {
                         throw new RuntimeException(ex);
                     }
                 });
 
+            }
+
+
+            if (event instanceof SoftHangupRequestEvent e) {
+                String uniqueId = e.getUniqueId();
+                CallSession session = sessions.get(uniqueId);
+
+                if (session != null) {
+                    Duration duration = Duration.between(
+                            session.getStartTime(), LocalDateTime.now());
+
+                    long seconds = duration.getSeconds();
+                    logger.info("Call ended for session: " + session);
+                    logger.info("Call duration for session " + uniqueId + ": " + seconds + " seconds");
+
+                    registerCall(session.getCallerId(),
+                            "FINISHED",
+                            e.getChannel(),
+                            uniqueId,
+                            session.getSelectedOption(),
+                            "result",
+                            String.valueOf(seconds)
+                    );
+
+                    sessions.remove(uniqueId);
+
+                }
             }
 
         });
@@ -113,29 +164,29 @@ public class AmiListener {
         logger.info("Client >>>>>>>>>>>>>>>>>>>>>>>>>>>>> " + client);
 
         if (client.isEmpty()) {
-            registerCall(phone, "No client");
+            //registerCall(phone, "No client");
             sendIVR(channel, "ivr-no-client");
             return;
 
         }
 
         if (!client.get().getIsActive()) {
-            registerCall(phone, "Inactive client");
+            //registerCall(phone, "Inactive client");
             sendIVR(channel, "ivr-client-inactive");
             return;
         }
 
-        registerCall(phone, "Active client");
+        //registerCall(phone, "Active client", channel);
         sendIVR(channel, "ivr-client");
 
 
     }
 
 
-    private void procesarDTMF(String opcion, String channel, String phone) throws IOException, TimeoutException, InterruptedException {
+    private void procesarDTMF(String opcion, String channel, String phone, String uniqueId) throws IOException, TimeoutException, InterruptedException {
 
         switch (opcion) {
-            case "1" -> consultaSaldo(channel, phone);
+            case "1" -> consultaSaldo(channel, phone, opcion, uniqueId);
             case "2" -> consultaCitas(channel);
             default -> sendIVR(channel, "ivr-opcion-invalida");
 
@@ -143,7 +194,7 @@ public class AmiListener {
     }
 
 
-    private void consultaSaldo(String channel, String phone) throws IOException, InterruptedException {
+    private void consultaSaldo(String channel, String phone, String option, String uniqueId) throws IOException, InterruptedException {
 
         Client client = clientRepository.findByPhone(phone)
                 .map(c -> {
@@ -155,7 +206,6 @@ public class AmiListener {
                 });
 
         String saldo = client.getBalance();
-        registerCall(client.getPhone(), "Active client");
         sendIVR(channel, "ivr-tiene-saldo", saldo);
 
     }
@@ -197,13 +247,26 @@ public class AmiListener {
 
     }
 
-    private void registerCall(String phone, String status) {
+    private void registerCall(String phone,
+                              String status,
+                              String channel,
+                              String uniqueId,
+                              String optionSelected,
+                              String result,
+                              String duration
+    ) {
         Call call = new Call();
         call.setTelephone(phone);
         call.setStatus(status);
-        call.setFecha(LocalDateTime.now());
+        call.setDateTime(LocalDateTime.now());
+        call.setChannel(channel);
+        call.setUniqueId(uniqueId);
+        call.setOptionSelected(optionSelected);
+        call.setResult(result);
+        call.setDuration(duration);
 
-        System.out.println("Registered call: " + call);
+
+        logger.info("Registered call: " + call);
         callRepository.save(call);
 
 

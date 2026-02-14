@@ -1,6 +1,6 @@
 package com.backend.clients.service.imp;
 
-import com.backend.clients.entity.Client;
+import com.backend.clients.model.Client;
 import org.springframework.stereotype.Service;
 
 import java.util.List;

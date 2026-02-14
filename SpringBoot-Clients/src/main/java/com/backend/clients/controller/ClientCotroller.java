@@ -1,6 +1,6 @@
-package com.backend.clients.config;
+package com.backend.clients.controller;
 
-import com.backend.clients.entity.Client;
+import com.backend.clients.model.Client;
 import com.backend.clients.service.imp.ClientService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
